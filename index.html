@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Newspaper Bill Calculator</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: Arial; padding: 20px; max-width: 900px; margin: auto; }
+    table, th, td { border: 1px solid #aaa; border-collapse: collapse; padding: 6px; text-align: center; }
+    input[type="number"], input[type="text"], select { width: 100%; padding: 4px; box-sizing: border-box; }
+    button { padding: 6px 12px; margin: 6px 4px 0 0; cursor: pointer; }
+    .no-print { margin-top: 15px; }
+    @media print {
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <h2 data-txt="title">🗞️ Newspaper Bill Calculator</h2>
+
+  <div class="no-print">
+    <label data-txt="selectMonth">Select Month & Year:</label>
+    <select id="monthSelect"></select>
+    <select id="yearSelect"></select>
+    <button onclick="calculateWeekdays()">📅 <span data-txt="getWeekdays">Get Weekdays</span></button>
+
+    <label style="float:right;">
+      🌐 <span data-txt="language">Language</span>:
+      <select onchange="changeLanguage(this.value)">
+        <option value="en">English</option>
+        <option value="hi">हिंदी</option>
+        <option value="mr">मराठी</option>
+      </select>
+    </label>
+  </div>
+
+  <div id="weekdaySummary" style="margin: 15px 0;"></div>
+
+  <table id="paperTable">
+    <thead>
+      <tr>
+        <th data-txt="paper">Paper Name</th>
+        <th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th>
+        <th data-txt="total">Total (₹)</th>
+        <th class="no-print" data-txt="action">Action</th>
+      </tr>
+    </thead>
+    <tbody id="paperBody"></tbody>
+  </table>
+
+  <div class="no-print">
+    <button onclick="addPaper()">➕ <span data-txt="addPaper">Add Newspaper</span></button>
+  </div>
+
+  <br/>
+  <label data-txt="agency">Agency Charges (₹):</label>
+  <input type="number" id="agencyCharge" value="0" oninput="calculateTotal()" />
+
+  <br/>
+  <label data-txt="adjust">Adjustments (+/- ₹):</label>
+  <input type="number" id="adjustment" value="0" oninput="calculateTotal()" />
+
+  <h3><span data-txt="grand">Grand Total</span>: ₹<span id="grandTotal">0.00</span></h3>
+
+  <div class="no-print">
+    <button onclick="saveData()">💾 <span data-txt="save">Save</span></button>
+    <button onclick="downloadExcel()">⬇️ <span data-txt="excel">Excel</span></button>
+    <button onclick="exportToWhatsApp()">📲 WhatsApp</button>
+    <button onclick="window.print()">🖨️ <span data-txt="print">Print / PDF</span></button>
+  </div>
+
+  <script>
+    const weekdayCounts = { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 };
+
+    const languageStrings = {
+      en: {
+        title: "Newspaper Bill Calculator",
+        selectMonth: "Select Month & Year:",
+        getWeekdays: "Get Weekdays",
+        addPaper: "Add Newspaper",
+        paper: "Paper Name",
+        total: "Total (₹)",
+        action: "Action",
+        agency: "Agency Charges (₹):",
+        adjust: "Adjustments (+/- ₹):",
+        grand: "Grand Total",
+        save: "Save",
+        excel: "Excel",
+        print: "Print / PDF",
+        language: "Language"
+      },
+      hi: {
+        title: "अखबार बिल कैलकुलेटर",
+        selectMonth: "माह और वर्ष चुनें:",
+        getWeekdays: "सप्ताह के दिन प्राप्त करें",
+        addPaper: "अखबार जोड़ें",
+        paper: "अखबार का नाम",
+        total: "कुल (₹)",
+        action: "क्रिया",
+        agency: "एजेंसी शुल्क (₹):",
+        adjust: "समायोजन (+/- ₹):",
+        grand: "कुल योग",
+        save: "सहेजें",
+        excel: "एक्सेल",
+        print: "प्रिंट / पीडीएफ",
+        language: "भाषा"
+      },
+      mr: {
+        title: "वृत्तपत्र बिल कॅल्क्युलेटर",
+        selectMonth: "महिना व वर्ष निवडा:",
+        getWeekdays: "आठवड्याचे दिवस मिळवा",
+        addPaper: "वृत्तपत्र जोडा",
+        paper: "वृत्तपत्राचे नाव",
+        total: "एकूण (₹)",
+        action: "क्रिया",
+        agency: "एजन्सी शुल्क (₹):",
+        adjust: "समायोजन (+/- ₹):",
+        grand: "एकूण रक्कम",
+        save: "साठवा",
+        excel: "एक्सेल",
+        print: "प्रिंट / पीडीएफ",
+        language: "भाषा"
+      }
+    };
+
+    function changeLanguage(lang) {
+      document.querySelectorAll("[data-txt]").forEach(el => {
+        const key = el.getAttribute("data-txt");
+        el.innerText = languageStrings[lang][key];
+      });
+    }
+
+    function initMonthYear() {
+      const monthSel = document.getElementById("monthSelect");
+      const yearSel = document.getElementById("yearSelect");
+      const now = new Date();
+      for (let m = 0; m < 12; m++) {
+        const opt = new Option(new Date(0, m).toLocaleString('default', { month: 'long' }), m);
+        monthSel.appendChild(opt);
+      }
+      for (let y = now.getFullYear() - 5; y <= now.getFullYear() + 5; y++) {
+        const opt = new Option(y, y);
+        yearSel.appendChild(opt);
+      }
+      monthSel.value = now.getMonth();
+      yearSel.value = now.getFullYear();
+    }
+
+    function calculateWeekdays() {
+      for (let day in weekdayCounts) weekdayCounts[day] = 0;
+      const month = parseInt(document.getElementById("monthSelect").value);
+      const year = parseInt(document.getElementById("yearSelect").value);
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      for (let d = 1; d <= daysInMonth; d++) {
+        const date = new Date(year, month, d);
+        const wd = date.toLocaleDateString('en-US', { weekday: 'short' });
+        if (wd.startsWith("Mon")) weekdayCounts.Mon++;
+        else if (wd.startsWith("Tue")) weekdayCounts.Tue++;
+        else if (wd.startsWith("Wed")) weekdayCounts.Wed++;
+        else if (wd.startsWith("Thu")) weekdayCounts.Thu++;
+        else if (wd.startsWith("Fri")) weekdayCounts.Fri++;
+        else if (wd.startsWith("Sat")) weekdayCounts.Sat++;
+        else if (wd.startsWith("Sun")) weekdayCounts.Sun++;
+      }
+      const summary = Object.entries(weekdayCounts).map(([d, c]) => `${d}: ${c}`).join(" | ");
+      document.getElementById("weekdaySummary").innerText = `🗓️ Weekdays in selected month: ${summary}`;
+      const key = `${month}-${year}`;
+      const data = JSON.parse(localStorage.getItem("bill-" + key) || "[]");
+      document.getElementById("paperBody").innerHTML = "";
+      if (data.length > 0) data.forEach(addPaper);
+      else addPaper();
+      document.getElementById("agencyCharge").value = localStorage.getItem("agency-" + key) || 0;
+      document.getElementById("adjustment").value = localStorage.getItem("adjust-" + key) || 0;
+      calculateTotal();
+    }
+
+    function addPaper(paper = {}) {
+      const table = document.getElementById("paperBody");
+      const row = table.insertRow();
+      const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+      let html = `<td><input type="text" value="${paper.name || ""}" /></td>`;
+      days.forEach(d => html += `<td><input type="number" min="0" value="${paper[d] || 0}" oninput="calculateTotal()" /></td>`);
+      html += `<td class="paper-total">0.00</td><td class="no-print"><button onclick="row.remove(); calculateTotal()">🗑️</button></td>`;
+      row.innerHTML = html;
+      calculateTotal();
+    }
+
+    function calculateTotal() {
+      let grand = 0;
+      document.querySelectorAll("#paperBody tr").forEach(row => {
+        const inputs = row.querySelectorAll("input");
+        let total = 0;
+        ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].forEach((d, i) => {
+          total += (parseFloat(inputs[i + 1].value) || 0) * weekdayCounts[d];
+        });
+        row.querySelector(".paper-total").innerText = total.toFixed(2);
+        grand += total;
+      });
+      const agency = parseFloat(document.getElementById("agencyCharge").value) || 0;
+      const adjust = parseFloat(document.getElementById("adjustment").value) || 0;
+      document.getElementById("grandTotal").innerText = (grand + agency + adjust).toFixed(2);
+    }
+
+    function saveData() {
+      const month = document.getElementById("monthSelect").value;
+      const year = document.getElementById("yearSelect").value;
+      const key = `${month}-${year}`;
+      const rows = document.querySelectorAll("#paperBody tr");
+      const data = [];
+      rows.forEach(row => {
+        const inputs = row.querySelectorAll("input");
+        const obj = { name: inputs[0].value };
+        ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].forEach((d, i) => obj[d] = inputs[i + 1].value);
+        data.push(obj);
+      });
+      localStorage.setItem("bill-" + key, JSON.stringify(data));
+      localStorage.setItem("agency-" + key, document.getElementById("agencyCharge").value);
+      localStorage.setItem("adjust-" + key, document.getElementById("adjustment").value);
+      alert("✅ Data saved for this month.");
+    }
+
+    function downloadExcel() {
+      const rows = [["Paper", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Total"]];
+      document.querySelectorAll("#paperBody tr").forEach(row => {
+        const inputs = row.querySelectorAll("input");
+        const paper = inputs[0].value;
+        const values = Array.from(inputs).slice(1).map(i => i.value);
+        const total = row.querySelector(".paper-total").innerText;
+        rows.push([paper, ...values, total]);
+      });
+      rows.push(["", "", "", "", "", "", "", "Agency", document.getElementById("agencyCharge").value]);
+      rows.push(["", "", "", "", "", "", "", "Adjustment", document.getElementById("adjustment").value]);
+      rows.push(["", "", "", "", "", "", "", "Grand Total", document.getElementById("grandTotal").innerText]);
+      const sheet = XLSX.utils.aoa_to_sheet(rows);
+      const book = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(book, sheet, "Bill");
+      XLSX.writeFile(book, "Newspaper_Bill.xlsx");
+    }
+
+    function exportToWhatsApp() {
+      let msg = "📰 Newspaper Bill Summary:\n";
+      document.querySelectorAll("#paperBody tr").forEach(row => {
+        const name = row.querySelector("input").value;
+        const total = row.querySelector(".paper-total").innerText;
+        if (name) msg += `• ${name}: ₹${total}\n`;
+      });
+      msg += `\nAgency Charges: ₹${document.getElementById("agencyCharge").value}`;
+      msg += `\nAdjustments: ₹${document.getElementById("adjustment").value}`;
+      msg += `\n🧾 Grand Total: ₹${document.getElementById("grandTotal").innerText}`;
+      const encoded = encodeURIComponent(msg);
+      window.open(`https://wa.me/?text=${encoded}`, "_blank");
+    }
+
+    window.onload = () => {
+      initMonthYear();
+      calculateWeekdays();
+      changeLanguage("en");
+    };
+  </script>
+</body>
+</html>
